@@ -1,43 +1,3 @@
-# Program Name: fit-model
-# Author: Jacob Englert
-# Date: 13 November 2023
-
-
-# Load Packages -----------------------------------------------------------
-library(tidyverse)
-library(splines)
-source('spanbbart.R')
-
-# Load Data ---------------------------------------------------------------
-dir <- "/Volumes/rsphprojects-ts/envision/Analysis/Jacob/BART/"
-data <- read_rds(paste0(dir, '02. Analytic Data Set Creation/02. Final Analytic Data Set/atl_data_05-07.rds'))
-data <- na.omit(data)
-data <- filter(data, POPULATION > 0)
-
-
-# Prepare Data ------------------------------------------------------------
-
-# Outcome
-y <- data$ASTHMA1
-time_spline <- model.matrix(~ns(yday(data$DATE), df = 7):factor(data$YEAR) - 1)
-
-# Design matrices
-x1 <- cbind(data$HOLIDAY_FO, time_spline)
-x2 <- dplyr::select(data, PM25, NO2, O3, Tmax) |> as.matrix()
-
-# Space-time indicators
-s <- as.numeric(as.factor(data$ZIP))
-t <- as.numeric(as.factor(data$DATE))
-
-
-# Fit Model ---------------------------------------------------------------
-fit <- spanbbart(x1 = x1, x2 = x2, y = y, s = s, t = t, 
-                 geo = data$geometry, offset = log(data$POPULATION),
-                 m = 100, light_store = TRUE,
-                 num_iter = 5000, num_burn = 2500, num_thin = 5, seed = 1)
-sa
-
-
 # Examine model fit -------------------------------------------------------
 
 # Variable inclusion proportions
@@ -97,58 +57,6 @@ fit$beta |>
   facet_wrap(~parm, scales = 'free') +
   theme_bw()
 
-
-# Partial Dependence ------------------------------------------------------
-
-# # Marginal
-# par(mfrow = c(2, 5))
-# start <- Sys.time()
-# pd <- dbarts::pdbart(fit$bart, xind = colnames(x2), pl = FALSE)
-# print(Sys.time() - start)
-# plot(pd)
-# 
-# 
-# 
-# pd1d <- function(fit, data, var, vals, mc.cores = 1){
-#   l_vals <- list(vals)
-#   names(l_vals) <- var
-#   d1 <- merge(l_vals, data[colnames(data) %in% setdiff(colnames(fit$var_counts), var)])
-#   
-#   # split_id <- rep(1:nrow(data), each = nrow(d1) / nrow(data))
-#   # 
-#   # preds <- split(d1, split_id) |>
-#   #   parallel::mclapply(\(x) rowMeans(fit$bart$predict(as.matrix(x))), mc.cores = mc.cores) |>
-#   #   unlist(use.names = FALSE)
-#   # 
-#   # # Compute partial dependence
-#   # pd <- data.frame(d1, f = preds - mean(fit$alpha)) |>
-#   #   summarise(pd = mean(f), .by = c(all_of(var)))
-#   
-#   
-#   preds <- split(d1, d1[[var]]) |>
-#     parallel::mclapply(\(x) colMeans(fit$bart$predict(as.matrix(x))), mc.cores = mc.cores) |>
-#     unlist(use.names = FALSE)
-#   
-#   pd <- data.frame(rep(l_vals[[var]], each = length(fit$alpha)), preds - mean(fit$alpha))
-#   colnames(pd) <- c(var, 'f')
-#   
-#   pd <- pd |> 
-#     summarise(pd = mean(f),
-#               lower = quantile(f, 0.025),
-#               upper = quantile(f, 0.975),
-#               .by = c(all_of(var)))
-#   
-#   return(pd)
-# }
-# 
-# var <- 'Tmax'
-# vals <- quantile(data$Tmax, probs = seq(0, 1, length.out = 10)) #seq(min(data$Tmax), max(data$Tmax), length.out = 10)
-# pd_Tmax <- pd1d(fit, data, var, vals, mc.cores = 3)
-# 
-# plot(pd_Tmax$pd ~ pd_Tmax$Tmax)
-# pd_Tmax |>
-#   ggplot(aes(x = Tmax, y = pd, ymin = lower, ymax = upper)) +
-#   geom_pointrange()
 
 
 
