@@ -18,4 +18,4 @@ echo "Executing on the machine:" $(hostname)
 
 module load R/4.2.2
 
-Rscript 03.\ Working Code/02.\ Analysis/R/fit-model-production.R $SLURM_ARRAY_TASK_ID
+Rscript "03. Working Code/02. Analysis/R/fit-model-production.R" $SLURM_ARRAY_TASK_ID
