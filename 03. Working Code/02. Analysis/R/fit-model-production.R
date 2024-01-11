@@ -34,7 +34,7 @@ y <- data[[outcome]]
 # Design matrices
 time_spline <- model.matrix(~ns(yday(data$DATE), df = 7):factor(data$YEAR) - 1)
 x1 <- cbind(data$HOLIDAY_FO, time_spline)
-x2 <- dplyr::select(data, PM25, NO2, O3, Tmax) |> as.matrix()
+x2 <- dplyr::select(data, PM25, NO2, O3, CO, Tmax) |> as.matrix()
 
 # Space-time indicators
 s <- as.numeric(as.factor(data$ZIP))
