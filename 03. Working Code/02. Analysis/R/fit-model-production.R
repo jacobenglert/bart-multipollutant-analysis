@@ -23,7 +23,6 @@ for(i in 1:ncol(params)){
 data <- read_rds(here::here('02. Analytic Data Set Creation','02. Final Analytic Data Set','atl_data_05-07.rds'))
 data <- na.omit(data)
 data <- filter(data, POPULATION > 0)
-data <- filter(data, month(DATE) == 5 & weekdays(DATE) == 'Sunday')
 
 
 # Prepare Data ------------------------------------------------------------
