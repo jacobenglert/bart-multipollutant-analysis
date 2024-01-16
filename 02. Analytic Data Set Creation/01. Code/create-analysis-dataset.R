@@ -27,8 +27,7 @@ counties <- counties |>
 
 # Identify zip codes in the 5-county ATL
 atl_zips_idx <- sf::st_intersects(zip_codes, counties, sparse = FALSE) |>
-  apply(2, which) |>
-  unlist()
+  apply(1, any)
 atl_zips <- zip_codes$ZIP[atl_zips_idx]
 
 # plot(sf::st_geometry(counties), col = 'red')
@@ -40,11 +39,13 @@ atl_zips <- zip_codes$ZIP[atl_zips_idx]
 h_data <- read_csv(here::here('01. Data','Health Data','FINAL_ED_ZIP_DAILY_COUNTS.csv'))
 h_data_atl <- h_data |>
   filter(PATZIP %in% atl_zips) |>
-  mutate(DATE = as.Date(DATE, format = "%m/%d/%Y"))
-min(table(h_data_atl$PATZIP))
-dupes <- h_data_atl |> mutate(n = max(row_number()), .by = c(DATE, PATZIP)) |> filter(n > 1)
-length(unique(h_data_atl$PATZIP))
+  mutate(DATE = as.Date(DATE, format = "%m/%d/%Y")) |>
+  arrange(PATZIP, DATE)
 
+# Identify duplicates
+dupes <- h_data_atl |> mutate(n = max(row_number()), .by = c(DATE, PATZIP)) |> filter(n > 1)
+
+# Add duplicate rows together
 h_data_atl <- h_data_atl |>
   group_by(PATZIP, DATE) |>
   summarise(across(RESP:ASTHMA1, sum)) |>
