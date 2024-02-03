@@ -23,7 +23,6 @@ for(i in 1:ncol(params)){
 # Load Data ---------------------------------------------------------------
 data <- read_rds(here::here('02. Analytic Data Set Creation','02. Final Analytic Data Set','atl_data_05-07.rds'))
 data <- na.omit(data)
-data <- filter(data, POPULATION > 0)
 
 
 # Prepare Data ------------------------------------------------------------
@@ -35,7 +34,8 @@ y <- data[[outcome]]
 time_spline <- model.matrix(~ns(yday(data$DATE), df = 7):factor(data$YEAR) - 1)
 x1 <- cbind(data$HOLIDAY_FO, time_spline)
 x2 <- dplyr::select(data, PM25, NO2, O3, CO, Tmax) |> as.matrix()
-x2 <- SoftBart::quantile_normalize_bart(x2)
+x2_scaled <- apply(x2, 2, \(x) (x - min(x))/ (max(x) - min(x))) # Scale BART predictors for SoftBART model
+# x2_scaled <- SoftBart::quantile_normalize_bart(x2)
 
 # Space-time indicators
 s <- as.numeric(as.factor(data$ZIP))
@@ -44,7 +44,10 @@ t <- as.numeric(as.factor(data$DATE))
 
 # Fit Model ---------------------------------------------------------------
 m <- 50
-fit <- soft_spanbbart(x1 = x1, x2 = x2, y = y, s = s, t = t, 
+num_burn <- 4000
+num_iter <- 6500
+num_thin <- 5
+fit <- soft_spanbbart(x1 = x1, x2 = x2_scaled, y = y, s = s, t = t, 
                  geo = data$geometry, offset = log(data$POPULATION),
                  seed = seed, m = m, k = k, base = base, power = power,
                  c = c, d = d,
@@ -73,12 +76,19 @@ P <- ncol(fit$var_counts)
 
 # Compute First-Order ALE -------------------------------------------------
 
-ale1 <- parallel::mclapply(1:P, \(j) mcmc_ale(x2, fit$bart, pred_fun, j, K), mc.cores = P)
+ale1 <- parallel::mclapply(1:P, \(j) mcmc_ale(x2_scaled, fit$bart, pred_fun, j, K), mc.cores = P)
 names(ale1) <- var_names
 
 # Create data frame of first-order ALEs
 ale1df <- mapply(\(x, n){
+  
   df <- data.frame(var = n, x = x$x, est = x$est, lcl = x$lcl, ucl = x$ucl)
+  
+  # Convert back to original scale
+  xmin <- min(x2[,n])
+  xmax <- max(x2[,n])
+  df$x <- (df$x * (xmax - xmin)) + xmin
+  
   return(df)
 }, x = ale1, n = names(ale1), SIMPLIFY = FALSE) |>
   bind_rows()
@@ -88,15 +98,16 @@ ale1df$var <- factor(ale1df$var, levels = var_names)
 # Compute Second-Order ALE ------------------------------------------------
 
 pairs <- combn(1:P, 2, simplify = FALSE)
-ale2 <- parallel::mclapply(pairs, \(j) mcmc_ale(x2, fit$bart, pred_fun, j, K), mc.cores = P)
+ale2 <- parallel::mclapply(pairs, \(j) mcmc_ale(x2_scaled, fit$bart, pred_fun, j, K), mc.cores = P)
 
 # Create data frame of second-order ALEs
 ale2df <- mapply(\(x, idx){
   
   n <- var_names[idx]
-  
-  x1 <- x$x[[1]]
-  x2 <- x$x[[2]]
+
+  # Convert back to original scale
+  x1 <- (x$x[[1]] * (max(x2[,n[1]]) - min(x2[,n[1]]))) + min(x2[,n[1]])
+  x2 <- (x$x[[2]] * (max(x2[,n[2]]) - min(x2[,n[2]]))) + min(x2[,n[2]])
   
   w1 <- c(diff(x1)[1], diff(x1)) / 2
   w2 <- c(rev(abs(diff(rev(x1)))), rev(abs(diff(x1)))[1]) / 2
