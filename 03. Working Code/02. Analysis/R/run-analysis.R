@@ -19,6 +19,7 @@ for(i in 1:ncol(params)){
   value <- params[key, i, drop = TRUE]
   if (is.numeric(value)) assign(name, eval(parse(text = value)))
   else if (is.character(value)) assign(name, value)
+  else if (is.logical(value)) assign(name, value)
   else if (is.list(value)) assign(name, unlist(value))
 }
 
@@ -29,7 +30,7 @@ data <- read_rds(here::here('02. Analytic Data Set Creation','02. Final Analytic
 # Compute 3 day moving average
 data <- data |>
   arrange(ZIP, DATE) |>
-  mutate(across(exposures, ~zoo::rollmean(x = ., k = 3, fill = NA, align = 'right')), .by = c(ZIP,YEAR))
+  mutate(across(all_of(exposures), ~zoo::rollmean(x = ., k = 3, fill = NA, align = 'right')), .by = c(ZIP,YEAR))
 data <- na.omit(data) # drop values with missing data (typically exposures)
 
 
