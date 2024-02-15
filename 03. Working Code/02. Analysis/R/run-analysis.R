@@ -45,6 +45,9 @@ x1 <- cbind(data$HOLIDAY_FO, time_spline)
 x2 <- data[exposures] |> as.matrix()
 x2_scaled <- apply(x2, 2, \(x) (x - min(x))/ (max(x) - min(x))) # Scale BART predictors for SoftBART model
 
+# Offset
+offset <- log(data$POPULATION)
+
 # Space-time indicators
 s <- as.numeric(as.factor(data$ZIP))
 t <- as.numeric(as.factor(data$DATE))
@@ -52,11 +55,32 @@ t <- as.numeric(as.factor(data$DATE))
 
 # Fit Model ---------------------------------------------------------------
 fit <- soft_spanbbart(x1 = x1, x2 = x2_scaled, y = y, s = s, t = t, 
-                      geo = data$geometry, offset = log(data$POPULATION),
+                      geo = data$geometry, offset = offset,
                       seed = seed, m = m, k = k, base = base, power = power,
                       c = c, d = d, sparse = sparse, soft = soft,
                       num_iter = num_iter, num_burn = num_burn, num_thin = num_thin,
                       light_store = TRUE)
+
+
+# Compute Excess Morbidity ------------------------------------------------
+
+# Posterior sample indexes
+samps <- seq.int(num_burn + 1, num_iter, num_thin)
+
+# Design matrix for spatial random effects
+x_nu <- matrix(0, nrow = nrow(x1), ncol = length(unique(s)))
+for (s.i in 1:ncol(x_nu)) x_nu[s == s.i, s.i] <- 1
+
+excess <- numeric(length(samps))
+for (k in 1:length(excess)) {
+  fixeff <- as.numeric(x1 %*% fit$beta[k,])
+  ranef <- as.numeric(x_nu %*% fit$nu[k,])
+  predx2 <- as.numeric(fit$bart$predict_iteration(x2_scaled, samps[k]))
+  x2_scaled_0 <- x2_scaled
+  x2_scaled_0[,colnames(x2) != 'Tmax'] <- x2_scaled_0[,colnames(x2) != 'Tmax']*0
+  pred0 <- as.numeric(fit$bart$predict_iteration(x2_scaled_0, samps[k]))
+  excess[k] <- sum(fit$xi[k] * (exp(offset + fixeff + ranef + predx2) - exp(offset + fixeff + ranef + pred0)))
+}
 
 
 # Compute ALE -------------------------------------------------------------
@@ -65,7 +89,7 @@ fit <- soft_spanbbart(x1 = x1, x2 = x2_scaled, y = y, s = s, t = t,
 
 # Prediction function
 pred_fun <- function(model, newdata) {
-  sapply(seq.int(num_burn + 1, num_iter, num_thin), \(i) model$predict_iteration(newdata, i))
+  sapply(samps, \(i) model$predict_iteration(newdata, i))
 }
 
 var_names <- colnames(x2)
@@ -124,29 +148,33 @@ ale1df$var <- factor(ale1df$var, levels = var_names)
 
 # Compute Second-Order ALE ------------------------------------------------
 
-pairs <- combn(1:P, 2, simplify = FALSE)
-ale2 <- parallel::mclapply(pairs, \(j) mcmc_ale(x2_scaled, fit$bart, pred_fun, 
-                                                j, K, center = 'avg_pred'), 
-                           mc.cores = P)
+if (P > 1) {
+  pairs <- combn(1:P, 2, simplify = FALSE)
+  ale2 <- parallel::mclapply(pairs, \(j) mcmc_ale(x2_scaled, fit$bart, pred_fun, 
+                                                  j, K, center = 'avg_pred'), 
+                             mc.cores = P)
 
-ale2df <- lapply(ale2, \(ale) rescale2(x2, ale)) |>
-  do.call(what = rbind)
-ale2df$var1 <- factor(ale2df$var1, levels = var_names)
-ale2df$var2 <- factor(ale2df$var2, levels = var_names)
+  ale2df <- lapply(ale2, \(ale) rescale2(x2, ale)) |>
+    do.call(what = rbind)
+  ale2df$var1 <- factor(ale2df$var1, levels = var_names)
+  ale2df$var2 <- factor(ale2df$var2, levels = var_names)
 
 
 # Compute Second-Order ALE with Main Effects ------------------------------
 
-ale3 <- parallel::mclapply(pairs, \(j) mcmc_ale(x2_scaled, fit$bart, pred_fun, 
-                                                j, K, center = 'avg_pred',
-                                                include_main_effects = TRUE),
-                           mc.cores = P)
+  ale3 <- parallel::mclapply(pairs, \(j) mcmc_ale(x2_scaled, fit$bart, pred_fun, 
+                                                  j, K, center = 'avg_pred',
+                                                  include_main_effects = TRUE),
+                             mc.cores = P)
 
-ale3df <- lapply(ale3, \(ale) rescale2(x2, ale)) |>
-  do.call(what = rbind)
-ale3df$var1 <- factor(ale3df$var1, levels = var_names)
-ale3df$var2 <- factor(ale3df$var2, levels = var_names)
-
+  ale3df <- lapply(ale3, \(ale) rescale2(x2, ale)) |>
+    do.call(what = rbind)
+  ale3df$var1 <- factor(ale3df$var1, levels = var_names)
+  ale3df$var2 <- factor(ale3df$var2, levels = var_names)
+} else {
+  ale2df <- NULL
+  ale3df <- NULL
+}
 
 # Output Results ----------------------------------------------------------
 write_rds(list(key = key, fit = fit, ale1 = ale1df, ale2 = ale2df, ale3 = ale3df), 

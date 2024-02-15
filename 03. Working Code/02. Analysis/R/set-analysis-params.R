@@ -39,7 +39,7 @@ K <- 40
 params <- crossing(outcome, exposures = exposure_combos,
                    seed, m, k, base, power, 
                    num_iter, num_burn, num_thin,
-                   c, d, sparse, soft) |>
+                   c, d, sparse, soft, K) |>
   mutate(key = row_number()) |>
   select(key, everything())
 
