@@ -82,6 +82,8 @@ for (k in 1:length(excess)) {
   excess[k] <- sum(fit$xi[k] * (exp(offset + fixeff + ranef + predx2) - exp(offset + fixeff + ranef + pred0)))
 }
 
+fit$excess <- excess
+
 
 # Compute ALE -------------------------------------------------------------
 
@@ -93,7 +95,7 @@ pred_fun <- function(model, newdata) {
 }
 
 var_names <- colnames(x2)
-P <- ncol(fit$var_counts)
+P <- ncol(x2)
 
 # Rescale x values back to original scale
 rescale1 <- function (x2, ale) {
@@ -151,7 +153,8 @@ ale1df$var <- factor(ale1df$var, levels = var_names)
 if (P > 1) {
   pairs <- combn(1:P, 2, simplify = FALSE)
   ale2 <- parallel::mclapply(pairs, \(j) mcmc_ale(x2_scaled, fit$bart, pred_fun, 
-                                                  j, K, center = 'avg_pred'), 
+                                                  j, K, center = 'avg_pred',
+						  include_main_effects = FALSE),
                              mc.cores = P)
 
   ale2df <- lapply(ale2, \(ale) rescale2(x2, ale)) |>
